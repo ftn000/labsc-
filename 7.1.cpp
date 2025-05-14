@@ -1,53 +1,21 @@
-﻿#include <iostream>
-#include <fstream>
+#include <iostream>
+#include <string>
 #include <vector>
 #include <memory>
 #include <stdexcept>
+#include <fstream>
 
-// Базовый класс сущности
-class Entity {
-public:
-    virtual std::string getName() const = 0;
-    virtual int getHealth() const = 0;
-    virtual int getLevel() const = 0;
-    virtual void displayInfo() const = 0;
-    virtual ~Entity() = default;
-};
-
-// Пример класса Player
-class Player : public Entity {
-    std::string name;
-    int health;
-    int level;
-public:
-    Player(const std::string& name, int health, int level)
-        : name(name), health(health), level(level) {
-    }
-
-    std::string getName() const override {
-        return name;
-    }
-
-    int getHealth() const override {
-        return health;
-    }
-
-    int getLevel() const override {
-        return level;
-    }
-
-    void displayInfo() const override {
-        std::cout << "Player: " << name << ", Health: " << health << ", Level: " << level << '\n';
-    }
-};
-
-// Шаблонный класс GameManager
 template <typename T>
 class GameManager {
+private:
     std::vector<T> entities;
+
 public:
-    void addEntity(T entity) {
-        entities.push_back(entity);
+    void addEntity(const T& entity) {
+        if (entity->getHealth() <= 0) {
+            throw std::invalid_argument("Entity has invalid health\n");
+        }
+        entities.push_back(std::move(entity));
     }
 
     void displayAll() const {
@@ -61,56 +29,111 @@ public:
     }
 };
 
-// Сохранение данных в файл
-void saveToFile(const GameManager<std::shared_ptr<Entity>>& manager, const std::string& filename) {
+template <typename T>
+class Queue {
+private:
+    std::vector<T> items;
+
+public:
+    Queue() {
+        std::cout << "Queue created!\n";
+    }
+
+    void push(const T& item) {
+        items.push_back(item);
+    }
+
+    void pop() {
+        if (items.empty()) {
+            throw std::out_of_range("Queue is empty, can't remove any items\n");
+        }
+        items.erase(items.begin());
+    }
+
+    bool empty() const {
+        return items.empty();
+    }
+
+    void display() const {
+        std::cout << "Queue contents:\n";
+        for (const auto& item : items) {
+            std::cout << item << std::endl;
+        }
+    }
+
+    ~Queue() {
+        std::cout << "Queue ended!\n";
+    }
+};
+
+class Entity {
+protected:
+    std::string name;
+    int health;
+
+public:
+    Entity(const std::string& n, int h) : name(n), health(h) {}
+    virtual void displayInfo() const {
+        std::cout << "Name: " << name << ", HP: " << health << std::endl;
+    }
+    virtual int getHealth() const {
+        return health;
+    }
+    virtual void save(std::ofstream& file) const{
+        file << " " << name << " " << health << std::endl;
+    }
+    virtual ~Entity() {}
+};
+
+class Player : public Entity {
+    int level;
+public:
+    Player(const std::string& n, int h, int l)
+        : Entity(n, h), level(l) {}
+    void displayInfo() const override {
+        std::cout << "Player: " << name << ", HP: " << health
+            << ", Level: " << level << std::endl;
+    }
+    void save(std::ofstream& file) const {
+        file << name << " " << health << " " << level <<std::endl;
+    }
+};
+
+void saveToFile(const GameManager<Entity*>& manager, const std::string& filename) {
     std::ofstream file(filename);
     if (!file) {
         throw std::runtime_error("Failed to open file for writing.");
     }
-
-    for (const auto& entity : manager.getEntities()) {
-        file << entity->getName() << " " << entity->getHealth() << " " << entity->getLevel() << "\n";
+    for (const auto& entity : manager.getEntities()){
+        entity->save(file);
     }
+    std::cout << "Saving completed!\n";
 }
 
-// Загрузка данных из файла
-void loadFromFile(GameManager<std::shared_ptr<Entity>>& manager, const std::string& filename) {
+void loadFromFile(GameManager<Entity*>& manager, const std::string& filename) {
     std::ifstream file(filename);
     if (!file) {
         throw std::runtime_error("Failed to open file for reading.");
     }
-
     std::string name;
-    int health, level;
+    int HP, level;
 
-    while (file >> name >> health >> level) {
-        manager.addEntity(std::make_shared<Player>(name, health, level));
+    while (file >> name >> HP >> level) {
+        manager.addEntity(new Player(name, HP, level));
     }
+    std::cout << "Loading completed!\n";
 }
 
 int main() {
-    try {
-        // Создание менеджера и добавление персонажей
-        GameManager<std::shared_ptr<Entity>> manager;
-        manager.addEntity(std::make_shared<Player>("Hero", 100, 1));
-        manager.addEntity(std::make_shared<Player>("Villain", 50, 2));
+    GameManager<Entity*> manager;
+    manager.addEntity(new Player("Hero", 100, 0));
+    manager.addEntity(new Player("Hero2", 200, 2));
+    manager.displayAll();
+    saveToFile(manager, "game_save.txt");
 
-        // Сохранение данных в файл
-        saveToFile(manager, "game_save.txt");
-
-        // Создание нового менеджера для загрузки данных
-        GameManager<std::shared_ptr<Entity>> loadedManager;
-
-        // Загрузка данных из файла
-        loadFromFile(loadedManager, "game_save.txt");
-
-        // Отображение загруженных персонажей
-        std::cout << "Loaded Entities:\n";
-        loadedManager.displayAll();
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-    }
+    GameManager<Entity*> loadedManager;
+    loadFromFile(loadedManager, "game_save.txt");
+    loadedManager.displayAll();
 
     return 0;
 }
